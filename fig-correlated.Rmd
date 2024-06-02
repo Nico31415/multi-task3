@@ -1,0 +1,96 @@
+---
+title: "Penalties"
+output: html_document
+date: "2024-05-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reticulate)
+library(tidyverse)
+library(patchwork)
+library(latex2exp)
+my_theme <-
+  ggplot2::theme_classic() +
+      ggplot2::theme(
+        title = ggplot2::element_text(size = 8),
+        text = ggplot2::element_text(size = 7),
+        axis.text = ggplot2::element_text(size = 7),
+        legend.text = ggplot2::element_text(size = 7),
+        plot.tag = ggplot2::element_text(face = 'bold', size = 8),
+        strip.text = ggplot2::element_text(size = 7),
+        strip.background = element_blank(),
+        legend.key.size = unit(6, 'pt'),
+        panel.background = element_blank(),
+        plot.margin = unit(c(0,0,0,0), 'pt'),
+        plot.background=element_blank()
+      )
+width <- 13.968
+se <- function(x) sd(x,na.rm=TRUE)/sqrt(length(x[!is.na(x)]))
+```
+
+```{r}
+df_1 <- arrow::read_feather('data/processed/relu/relu_finetune_1.feather')
+fig_a <-
+  df_1 %>%
+  filter(
+    correlation %in% c("[0.9, 0.9, 0.9, 0.9, 0.9, 0.9]", "[1.0, 1.0, 1.0, 1.0, 1.0, 0.9]"),
+    setup == 'backprop'
+  ) %>%
+  mutate(task = case_when(
+    correlation == "[0.9, 0.9, 0.9, 0.9, 0.9, 0.9]" ~ 'Corr.',
+    correlation == "[1.0, 1.0, 1.0, 1.0, 1.0, 0.9]" ~ 'Mixture'
+  )) %>%
+  filter(task=='Corr.') %>%
+  ggplot(aes(n_train, loss/baseline, color=setup2, group=setup2)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x), show.legend=FALSE) +
+  stat_summary(geom='line', size=0.25, show.legend=TRUE) +
+  my_theme +
+  scale_color_manual(
+    values = c(
+      'purple', 'darkgreen', 'blue'
+    )
+  ) +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks=c(1e-1, 1e-4), labels=c('0.1', parse(text='10^{-4}'))) +
+  labs(x = '# Samples', y = 'Loss', color=NULL)
+fig_a
+```
+
+
+```{r}
+df <- read_csv('data/processed/relu/relu_mt_ft.csv')
+```
+
+```{r}
+fig_b <-
+  df %>%
+  filter((correlation %in% c(0.8, 0.9, 1.)), load_model | (correlation==1), magnitude%in% c(1., 0.1, 0.01)) %>%
+  mutate(setup = if_else(load_model, paste0('PT+FT (Corr.: ', correlation, ')'), 'STL') %>%
+           factor(levels = c('STL', paste0('PT+FT (Corr.: ', c(1., 0.9, 0.8), ')'))),
+         magnitude = paste0('Mag.: ', magnitude) %>% factor(levels = paste0('Mag.: ', c(1., 0.1, 0.01)))) %>%
+  ggplot(aes(n_train, loss/baseline, color=setup)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x, na.rm=TRUE)-2*se(x), fun.max=function(x) mean(x,na.rm=TRUE)+2*se(x), show.legend=FALSE) +
+  stat_summary(geom='line', size=0.25) +
+  my_theme +
+  facet_wrap(~magnitude) +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks=c(1e-1, 1e-4), labels=c('0.1', parse(text='10^{-4}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color=NULL) +
+  scale_color_manual(
+    values = c('blue', 'darkgreen', 'green4', 'green3')
+  )
+fig_b
+```
+
+```{r}
+fig <-
+  fig_a + fig_b +
+  plot_layout(nrow=1, widths=c(1,3)) +
+  plot_annotation(tag_levels = 'a')
+fig & theme(legend.position = 'top', legend.direction = 'vertical')
+ggsave('figures/fig-correlated.pdf', width = width/2, height = 0.35*width, units = 'cm')
+```
+

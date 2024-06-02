@@ -1,0 +1,222 @@
+---
+title: "Penalties"
+output: html_document
+date: "2024-05-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reticulate)
+library(tidyverse)
+library(patchwork)
+library(latex2exp)
+my_theme <-
+  ggplot2::theme_classic() +
+      ggplot2::theme(
+        title = ggplot2::element_text(size = 8),
+        text = ggplot2::element_text(size = 7),
+        axis.text = ggplot2::element_text(size = 7),
+        legend.text = ggplot2::element_text(size = 7),
+        plot.tag = ggplot2::element_text(face = 'bold', size = 8),
+        strip.text = ggplot2::element_text(size = 7),
+        strip.background = element_blank(),
+        legend.key.size = unit(6, 'pt'),
+        panel.background = element_blank(),
+        plot.margin = unit(c(0,0,0,0), 'pt'),
+        plot.background=element_blank()
+      )
+width <- 13.968
+```
+
+```{r}
+diag_sparse <- arrow::read_feather('data/processed/diagonal/df_diagonal_sparse_overlap.feather') %>%
+  filter(split %in% c('val', 'val_2'))
+diag_sparse <-
+  diag_sparse %>%
+  inner_join(
+    diag_sparse %>% filter(setup=='STL', n_train==16) %>%
+      rename(baseline=loss) %>%
+      select(seed, baseline, active_dims, overlap)
+  )
+se <- function(x) sd(x)/sqrt(length(x))
+fig_a <-
+  diag_sparse %>%
+  filter(setup %in% c('PT+FT', 'MTL', 'STL'), overlap=='no') %>%
+  mutate(setup = factor(setup, levels = c('STL', 'MTL', 'PT+FT'))) %>%
+  ggplot(aes(n_train, loss/baseline, color=active_dims, group=active_dims)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25, show.legend=TRUE, size=0.25) +
+  my_theme + 
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks = c(1, 1e-3, 1e-6), labels=c('1', parse(text='10^{-3}'), parse(text='10^{-6}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color = '# Active\ndims') +
+  scale_color_viridis_c(option='cividis', breaks = c(5, 40)) +
+  facet_wrap(~setup)
+fig_a
+```
+
+```{r}
+df_2 <- arrow::read_feather('data/processed/relu/relu_finetune_2.feather')
+fig_b <-
+  df_2 %>%
+  filter(setup2 %in% c('STL', 'MTL', 'PT+FT'), corr==0) %>%
+  mutate(setup2 = factor(setup2, levels = c('STL', 'MTL', 'PT+FT'))) %>%
+  ggplot(aes(n_train, loss/baseline, color=n_units, group=n_units)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10() +
+  facet_wrap(~setup2) +
+  scale_color_viridis_c(option='cividis', breaks=c(1,6)) +
+  my_theme +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks=c(1e-1, 1e-4), labels=c('0.1', parse(text='10^{-4}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color='Units')
+fig_b
+```
+
+```{r}
+diag_overlap <- arrow::read_feather('data/processed/diagonal/df_diagonal_overlap.feather')
+fig_c <-
+  diag_overlap %>%
+  filter(split%in%c('val', 'val_2')) %>%
+  inner_join(
+    diag_overlap %>% filter(split=='val', setup=='STL', n_train==16) %>%
+      rename(baseline=loss) %>%
+      select(seed, baseline, overlap)
+  ) %>%
+  mutate(
+    setup = factor(setup, levels=c('MTL', 'PT+FT', 'STL', 'PT+FT (LR)', 'STL (LR)'))
+  ) %>%
+  filter(overlap == 40) %>%
+  ggplot(aes(n_train, loss/baseline, color=setup))+
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks = c(1, 1e-3, 1e-6), labels=c('1', parse(text='10^{-3}'), parse(text='10^{-6}'))) +
+  my_theme +
+  scale_color_manual(
+  values = c(
+    'purple', 'darkgreen', 'blue', 'darkred', 'orange'
+  ),
+  labels = c('MTL', 'PT+FT', 'STL', 'PT+FT (LP)', 'STL (LP)')
+) +
+  labs(x='# Samples', y = 'Gen. loss', color=NULL)
+fig_c
+```
+
+```{r}
+df_1 <- arrow::read_feather('data/processed/relu/relu_finetune_1.feather')
+fig_d <-
+  df_1 %>%
+  filter(
+    correlation %in% c(
+      '[1.0, 1.0, 1.0, 1.0, 1.0, 1.0]'
+    )
+  ) %>%
+  mutate(
+    overlap = case_when(
+      correlation == '[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]' ~ '0/6',
+      correlation == '[1.0, 1.0, 1.0, 0.0, 0.0, 0.0]' ~ '3/6',
+      correlation == '[1.0, 1.0, 1.0, 1.0, 1.0, 0.0]' ~ '5/6',
+      correlation == '[1.0, 1.0, 1.0, 1.0, 1.0, 1.0]' ~ '6/6'
+    ),
+    setup2 = factor(setup2, levels=c('MTL', 'PT+FT', 'STL', 'PT+FT (LR)', 'PT+FT (NTK)', 'STL (LR)', 'STL (NTK)'))
+  ) %>%
+  ggplot(aes(n_train, loss/baseline, color=setup2)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  scale_color_manual(
+    values = c(
+      'purple', 'darkgreen', 'blue', 'darkred', 'red', 'orange', 'yellow'
+    ),
+    labels = c('MTL', 'PT+FT', 'STL', 'PT+FT (LP)', 'PT+FT (NTK)', 'STL (LP)', 'STL (NTK)')
+  ) +
+  my_theme +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks=c(1e-1, 1e-4), labels=c('0.1', parse(text='10^{-4}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color=NULL) 
+fig_d
+```
+
+```{r}
+fig_e <-
+  diag_overlap %>%
+  filter(split%in%c('val', 'val_2')) %>%
+  inner_join(
+    diag_overlap %>% filter(split=='val', setup=='STL', n_train==16) %>%
+      rename(baseline=loss) %>%
+      select(seed, baseline, overlap)
+  ) %>%
+  mutate(
+    setup = factor(setup, levels=c('MTL', 'PT+FT', 'STL', 'PT+FT (LR)', 'STL (LR)'))
+  ) %>%
+  filter(overlap %in% c(20, 30)) %>%
+  mutate(overlap = paste0(overlap, '/40')) %>%
+  ggplot(aes(n_train, loss/baseline, color=setup))+
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks = c(1, 1e-3, 1e-6), labels=c('1', parse(text='10^{-3}'), parse(text='10^{-6}'))) +
+  my_theme +
+  facet_wrap(~overlap) +
+  scale_color_manual(
+  values = c(
+    'purple', 'darkgreen', 'blue', 'darkred', 'orange'
+  ),
+  labels = c('MTL', 'PT+FT', 'STL', 'PT+FT (LP)', 'STL (LP)')
+) +
+  labs(x='# Samples', y = 'Gen. loss', color=NULL)
+fig_e
+```
+
+```{r}
+fig_f <-
+  df_1 %>%
+  filter(
+    correlation %in% c(
+      '[1.0, 1.0, 1.0, 0.0, 0.0, 0.0]',
+      '[1.0, 1.0, 1.0, 1.0, 1.0, 0.0]'
+    )
+  ) %>%
+  mutate(
+    overlap = case_when(
+      correlation == '[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]' ~ '0/6',
+      correlation == '[1.0, 1.0, 1.0, 0.0, 0.0, 0.0]' ~ '3/6',
+      correlation == '[1.0, 1.0, 1.0, 1.0, 1.0, 0.0]' ~ '5/6',
+      correlation == '[1.0, 1.0, 1.0, 1.0, 1.0, 1.0]' ~ '6/6'
+    ),
+    setup2 = factor(setup2, levels=c('MTL', 'PT+FT', 'STL', 'PT+FT (LR)', 'PT+FT (NTK)', 'STL (LR)', 'STL (NTK)'))
+  ) %>%
+  ggplot(aes(n_train, loss/baseline, color=setup2)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  scale_color_manual(
+    values = c(
+      'purple', 'darkgreen', 'blue', 'darkred', 'red', 'orange', 'yellow'
+    ),
+    labels = c('MTL', 'PT+FT', 'STL', 'PT+FT (LP)', 'PT+FT (NTK)', 'STL (LP)', 'STL (NTK)')
+  ) +
+  my_theme +
+  facet_wrap(~overlap) +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks=c(1e-1, 1e-4), labels=c('0.1', parse(text='10^{-4}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color=NULL) 
+fig_f
+```
+
+```{r}
+fig <-
+  fig_a + fig_b + fig_c + fig_d + (fig_e + guides(color=guide_none())) + (fig_f+guides(color=guide_none())) +
+  plot_layout(design='135\n246', widths=c(3,1,2)) +
+  plot_annotation(tag_levels = 'a')
+fig
+ggsave('figures/fig-shared.pdf', width = width, height = 0.45*width, units = 'cm')
+```
+

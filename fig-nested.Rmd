@@ -1,0 +1,328 @@
+---
+title: "Penalties"
+output: html_document
+date: "2024-05-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reticulate)
+library(tidyverse)
+library(patchwork)
+library(latex2exp)
+my_theme <-
+  ggplot2::theme_classic() +
+      ggplot2::theme(
+        title = ggplot2::element_text(size = 8),
+        text = ggplot2::element_text(size = 7),
+        axis.text = ggplot2::element_text(size = 7),
+        legend.text = ggplot2::element_text(size = 7),
+        plot.tag = ggplot2::element_text(face = 'bold', size = 8),
+        strip.text = ggplot2::element_text(size = 7),
+        strip.background = element_blank(),
+        legend.key.size = unit(6, 'pt'),
+        panel.background = element_blank(),
+        plot.margin = unit(c(0,0,0,0), 'pt'),
+        plot.background=element_blank()
+      )
+width <- 13.968
+se <- function(x) sd(x)/sqrt(length(x))
+```
+
+```{r}
+Q <- function(z) {
+  2-sqrt(4+z**2)+z*asinh(z/2)
+}
+q_norm <- function(beta, beta_init, gamma) {
+    (abs(beta_init)+gamma**2)*Q(2*beta/(abs(beta_init)+gamma**2))
+}
+mt_norm <- function(beta, beta_init) {
+  sqrt(beta**2+beta_init**2)-abs(beta_init)
+}
+Q_prime <- function(z) {
+  -1/sqrt(4+z**2)*2*z+asinh(z/2)+z/sqrt(1+(z/2)**2)/2
+}
+q_norm_prime_init <- function(beta, beta_init, gamma) {
+    beta_init/(beta_init+gamma**2)-Q_prime(2*beta/(abs(beta_init)+gamma**2))/Q(2*beta/(abs(beta_init)+gamma**2))*beta_init/(beta_init+gamma**2)**2
+}
+```
+
+```{r}
+fig_a <-
+  bind_rows(
+  expand.grid(
+    beta_init = 10**seq(-4,2,0.01),
+    beta = 10**(seq(-3,3, 0.01))
+  ) %>%
+  as_tibble() %>%
+  mutate(
+    der_beta = (log(mt_norm(exp(log(beta)+1e-3), beta_init))-log(mt_norm(beta, beta_init)))/1e-3,
+    der_beta_init = (log(mt_norm(beta, exp(log(beta_init)+1e-3)))-log(mt_norm(beta, beta_init)))/1e-3,
+    norm = 'mt'
+  ),
+  expand.grid(
+    beta_init = 10**seq(-4,2,0.01),
+    beta = 10**(seq(-3,3, 0.01))
+  ) %>%
+  as_tibble() %>%
+  mutate(
+    der_beta = (log(q_norm(exp(log(beta)+1e-3), beta_init, 0.))-log(q_norm(beta, beta_init, 0.)))/1e-3,
+    der_beta_init = (log(q_norm(beta, exp(log(beta_init)+1e-3), 0.))-log(q_norm(beta, beta_init, 0.)))/1e-3,
+    norm='q'
+  )
+) %>%
+  filter(beta == 1) %>%
+  ggplot(aes(beta_init, der_beta, color=norm)) +
+  geom_vline(data=NULL, xintercept=1, color='grey50', linetype='dashed') +
+  geom_line(size=0.25) +
+  scale_x_log10(breaks=c(0.001, 10), labels=c('0.001', '10')) + 
+  scale_y_continuous(
+    'Order of penalty',
+    sec.axis=sec_axis(~1-., name = 'Feature\ndependence', breaks=c(0,-1)),
+    breaks=c(1,2)
+  ) +
+  scale_color_manual(values = c('purple', 'darkgreen'), labels = c('MTL', 'PT+FT')) +
+  labs(x = 'Auxiliary\nmagnitude', color=NULL) +
+  my_theme
+fig_a
+```
+
+```{python}
+import numpy as np
+alpha = 0
+beta_vals = np.logspace(-4, 2, 100, base=10)
+theta_vals = [1., 0.99, 0.95, 0.9, 0.5, 0.0]
+beta_aux_vals = np.logspace(-4, 2, 100, base=10)
+df = {'norm': [], 'beta': [], 'beta_aux': [], 'theta': [], 'norm_beta': [], 'norm_beta_aux': []}
+def get_norm(beta, m_0, v_0):
+  m = None
+  for root in np.roots([1, -m_0*theta, 0, v_0*beta, -beta**2]):
+      if np.abs(np.imag(root)) < 1e-6 and np.real(root) > 0:
+          m = np.real(root)
+  norm = (beta/m-v_0)**2+m**2 + m_0**2 - 2*m*m_0*theta
+  return norm
+for a, theta in enumerate(theta_vals):
+    for b, beta_aux in enumerate(beta_aux_vals):
+        for c, beta in enumerate(beta_vals):
+            v_0 = alpha
+            m_0 = np.sqrt(beta_aux)
+            norm = get_norm(beta, m_0, v_0)
+            norm_beta = (np.log(get_norm(np.exp(np.log(beta)+1e-4), m_0, v_0))-np.log(get_norm(beta, m_0, v_0)))/1e-4
+            norm_beta_aux = (np.log(get_norm(beta, np.sqrt(np.exp(np.log(beta_aux)+1e-4)), v_0))-np.log(get_norm(beta, np.sqrt(beta_aux), v_0)))/1e-4
+            df['norm'].append(norm)
+            df['beta'].append(beta)
+            df['beta_aux'].append(beta_aux)
+            df['theta'].append(theta)
+            df['norm_beta'].append(norm_beta)
+            df['norm_beta_aux'].append(norm_beta_aux)
+```
+
+```{r}
+fig_b <-
+  as_tibble(py$df) %>% mutate_all(as.double) %>%
+  filter(beta==1) %>%
+  ggplot(aes(beta_aux, norm_beta, color=theta, group=theta)) +
+  geom_vline(data=NULL, xintercept=1, color='grey50', linetype='dashed') +
+  geom_line(size=0.25) +
+  scale_x_log10(breaks=c(0.001, 10), labels=c('0.001', '10')) + 
+  scale_y_continuous(
+    'Order of penalty',
+    sec.axis=sec_axis(~1-., name = 'Feature\ndependence', breaks=c(1,0,-1)),
+    breaks=c(0,1,2)
+  ) +
+  scico::scale_color_scico(palette='hawaii', breaks=c(0,1), end=0.7) +
+  labs(x = 'Auxiliary\nmagnitude', color='Corr.') +
+  my_theme
+fig_b
+```
+
+```{r}
+diag_sparse <- arrow::read_feather('data/processed/diagonal/df_diagonal_sparse_overlap.feather') %>%
+  filter(split %in% c('val', 'val_2'))
+diag_sparse <-
+  diag_sparse %>%
+  inner_join(
+    diag_sparse %>% filter(setup=='STL', n_train==16) %>%
+      rename(baseline=loss) %>%
+      select(seed, baseline, active_dims, overlap)
+  )
+fig_c <-
+  diag_sparse %>%
+  filter(setup %in% c('PT+FT', 'MTL'), overlap=='yes') %>%
+  ggplot(aes(n_train, loss/baseline, color=active_dims, group=active_dims)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=.25) +
+  stat_summary(geom='point', show.legend = FALSE, shape='.') +
+  my_theme + 
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks = c(1, 1e-3, 1e-6), labels=c('1', parse(text='10^{-3}'), parse(text='10^{-6}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color = 'Non-zero\nentries') +
+  scale_color_viridis_c(option='cividis', breaks=c(5, 40)) +
+  facet_wrap(~setup)
+fig_c
+```
+
+```{r}
+diag_scaling <- arrow::read_feather('data/processed/diagonal/df_diagonal_scaling.feather') %>%
+  filter(split %in% c('val', 'val_2'))
+diag_scaling <-
+  diag_scaling %>%
+  inner_join(
+    diag_sparse %>% filter(setup=='STL', n_train==16) %>%
+      select(seed, baseline, active_dims, overlap)
+  )
+fig_d <-
+  diag_scaling %>%
+  filter(overlap=='yes', setup=='PT+FT', w_scaling %in% c(.1, .01)) %>%
+  mutate(w_scaling = w_scaling %>% factor(levels = c(.1, .01))) %>%
+  ggplot(aes(n_train, loss/baseline, color=active_dims, group=active_dims)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  my_theme + 
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks = c(1, 1e-3, 1e-6), labels=c('1', parse(text='10^{-3}'), parse(text='10^{-6}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color='Non-zero\nentries') +
+  scale_color_viridis_c(option='cividis', breaks=c(5,40)) +
+  facet_wrap(~w_scaling)
+fig_d
+```
+
+```{r}
+fig_e <-
+  diag_scaling %>%
+  filter(setup=='PT+FT', active_dims==5, w_scaling >=.01) %>%
+  #mutate(w_scaling = w_scaling %>% factor(levels = c(1., 0.1, 0.01))) %>%
+  mutate(overlap = if_else(overlap == 'yes', 'Overlap', 'No overlap')) %>%
+  ggplot(aes(n_train, loss/baseline, group=paste(w_scaling, overlap), color=w_scaling)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  my_theme + 
+  scale_x_log10(breaks=c(32, 256)) +
+  facet_wrap(~overlap) +
+  scale_y_log10(breaks = c(1, 1e-3, 1e-6), labels=c('1', parse(text='10^{-3}'), parse(text='10^{-6}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color='Scaling') +
+  scale_color_viridis_c(option='magma', trans='log10', end=0.8, breaks=c(0.01, 1))
+fig_e
+```
+
+```{r}
+df_2 <- arrow::read_feather('data/processed/relu/relu_finetune_2.feather')
+fig_f <-
+  df_2 %>%
+  filter(corr==1, setup2 %in% c('MTL', 'PT+FT')) %>%
+  ggplot(aes(n_train, loss/baseline, color=n_units, group=n_units)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  facet_wrap(~setup2) +
+  scale_color_viridis_c(option='cividis', breaks=c(1,6)) +
+  my_theme +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks=c(1e-1, 1e-4), labels=c('0.1', parse(text='10^{-4}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color='Units')
+fig_f
+```
+
+```{r}
+df_3 <- arrow::read_feather('data/processed/relu/relu_finetune_3.feather')
+fig_g <-
+  df_3 %>%
+  filter(corr==1, setup2=='PT+FT', weight_scaling %in% c(0.1, 10.)) %>%
+  mutate(
+    setup3 = if_else(setup2 == 'MTL', 'MTL\n', paste0('PT+FT\n', weight_scaling)) %>%
+      factor(levels = c(paste0('PT+FT\n', c(0.1, 1., 10.)), 'MTL\n'))
+  ) %>%
+  ggplot(aes(n_train, loss/baseline, color=n_units, group=n_units)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10() +
+  facet_wrap(~weight_scaling) +
+  scale_color_viridis_c(option='cividis', breaks=c(1,6)) +
+  my_theme +
+  facet_wrap(~setup3, nrow=1) +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks=c(1e-1, 1e-4), labels=c('0.1', parse(text='10^{-4}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color='Units')
+fig_g
+```
+
+```{r}
+fig_h <-
+  df_3 %>%
+  filter(setup2=='PT+FT', weight_scaling %in% c(0.1, 1., 10.), n_units==1) %>%
+  #mutate(w_scaling = w_scaling %>% factor(levels = c(1., 0.1, 0.01))) %>%
+  mutate(overlap = if_else(corr==1., 'Overlap', 'No overlap')) %>%
+  ggplot(aes(n_train, loss/baseline, group=paste(weight_scaling, overlap), color=weight_scaling)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  my_theme + 
+  scale_x_log10(breaks=c(32, 256)) +
+  facet_wrap(~overlap) +
+  scale_y_log10(breaks=c(1e-1, 1e-4), labels=c('0.1', parse(text='10^{-4}'))) +
+  labs(x = '# Samples', y = 'Gen. loss', color='Scaling') +
+  scale_color_viridis_c(option='magma', trans='log10', end=0.8, breaks=c(0.1, 10))
+fig_h
+```
+
+```{r}
+fig <-
+  fig_a + fig_c + (fig_d + guides(color=guide_none())) + fig_b + fig_f + (fig_g+guides(color=guide_none())) + plot_layout(design='123\n567', widths=c(1,2,2)) + plot_annotation(tag_levels = 'a')
+fig & theme(legend.key.size=unit(4, 'pt'))
+ggsave('figures/fig-nested.pdf', width = width, height = 0.45*width, units = 'cm')
+```
+
+```{r}
+fig_g <-
+  bind_rows(diag_scaling, diag_sparse%>%filter(setup=='MTL')) %>%
+  filter(setup %in% c('PT+FT', 'MTL'), active_dims==5, if_else(setup=='PT+FT', w_scaling >=.01, TRUE)) %>%
+  mutate(setup3 = if_else(setup == 'PT+FT', paste0('PT+FT\n', w_scaling), 'MTL\n') %>% factor(levels = c('MTL\n', paste0('PT+FT\n', c(1., 0.1, 0.01))))) %>%
+  ggplot(aes(n_train, loss/baseline, linetype=overlap, group=overlap)) +
+  stat_summary(geom='line', size=0.25) +
+  stat_summary(geom='point', show.legend = FALSE, shape='.') +
+  stat_summary(geom='linerange', show.legend=FALSE, linetype='solid', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  my_theme + 
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks = c(1, 1e-3, 1e-6), labels=c('1', parse(text='10^{-3}'), parse(text='10^{-6}'))) +
+  labs(x = '# Samples', y = 'Loss') +
+  scale_color_viridis_c(option='cividis') +
+  facet_wrap(~setup3, nrow=1)
+fig_g
+```
+
+```{r}
+fig_h <-
+  df_3 %>%
+  filter(n_units==1, setup2=='PT+FT', weight_scaling %in% c(0.1, 1., 10.)) %>%
+  bind_rows(
+    df_2 %>% filter(n_units==1, setup2=='MTL')
+  ) %>%
+  mutate(
+    setup3 = if_else(setup2 == 'MTL', 'MTL\n', paste0('PT+FT\n', weight_scaling)) %>%
+      factor(levels = c('MTL\n', paste0('PT+FT\n', c(10., 1., 0.1))))
+  ) %>%
+  ggplot(aes(n_train, loss/baseline, linetype=if_else(corr==1, 'yes', 'no'), group=corr)) +
+  stat_summary(geom='line', size=0.25) +
+  stat_summary(geom='point', show.legend = FALSE, shape='.') +
+  stat_summary(geom='linerange', show.legend=FALSE, linetype='solid', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  scale_x_log10(breaks=c(32, 256)) +
+  scale_y_log10(breaks=c(1e-1, 1e-4), labels=c('0.1', parse(text='10^{-4}'))) +
+  facet_wrap(~setup3, nrow=1) +
+  scale_color_viridis_c(option='cividis') +
+  labs(x='# Samples', y='Loss', linetype='Same\nUnits') +
+  my_theme
+fig_h
+```
+
+```{r}
+fig_g + fig_h + plot_annotation(tag_levels = 'a') + plot_layout(nrow=2)
+ggsave('figures/fig-supp-nested.pdf', width = width*2/3, height = 0.4*width, units = 'cm')
+```
+

@@ -1,0 +1,169 @@
+---
+title: "Penalties"
+output: html_document
+date: "2024-05-17"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reticulate)
+library(tidyverse)
+library(patchwork)
+library(latex2exp)
+my_theme <-
+  ggplot2::theme_classic() +
+      ggplot2::theme(
+        title = ggplot2::element_text(size = 8),
+        text = ggplot2::element_text(size = 7),
+        axis.text = ggplot2::element_text(size = 7),
+        legend.text = ggplot2::element_text(size = 7),
+        plot.tag = ggplot2::element_text(face = 'bold', size = 8),
+        strip.text = ggplot2::element_text(size = 7),
+        strip.background = element_blank(),
+        legend.key.size = unit(4, 'pt'),
+        panel.background = element_blank(),
+        plot.margin = unit(c(0,0,0,0), 'pt'),
+        plot.background=element_blank()
+      )
+width <- 13.968
+```
+
+```{r}
+df <- read_csv('data/processed/cifar/resnet_acc.csv')
+fig_a <-
+  df %>%
+  filter((scaling==1.) | is.na(scaling)) %>%
+  mutate(
+    mode = factor(mode, c('multitask', 'finetuning', 'singletask'))
+  ) %>%
+  ggplot(aes(n_samples, 1-valid, color=mode)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x),
+               show.legend=FALSE) +
+  stat_summary(geom='line', size=0.25) +
+  scale_color_manual(
+    values = c(
+      'purple', 'darkgreen', 'blue'
+    ),
+    labels = c('MTL', 'PT+FT', 'STL')
+  ) +
+  my_theme +
+  scale_x_log10(breaks=c(20, 500)) +
+  scale_y_log10(breaks=c(0.1, 0.5)) +
+  labs(x = '# Samples', y = 'Accuracy', color=NULL) 
+fig_a
+```
+
+```{r}
+fig_b <-
+  df %>%
+  filter(mode == 'finetuning') %>%
+  ggplot(aes(n_samples, 1-valid, color=scaling, group=scaling)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  my_theme +
+  scale_x_log10(breaks=c(20, 500)) +
+  scale_y_log10(breaks=c(0.1, 0.5)) +
+  labs(x = '# Samples', y = 'Accuracy', color='Scaling')  +
+  scale_color_viridis_c(option='magma', trans='log10', end=0.8, breaks=c(0.125, 2))
+fig_b
+```
+
+```{r}
+fig_c <-
+  read_csv('data/processed/cifar/resnet_ensd.csv') %>%
+  filter(n_samples == 1000, variable != 'Overlap') %>%
+  mutate(
+    variable = factor(variable, levels = c('PR Pre', 'PR Post', 'ENSD'))
+  ) %>%
+  filter(scaling %in% c(0.125, 1, 2)) %>%
+  mutate(scaling = paste('Scaling:', scaling)) %>%
+  ggplot(aes(layer+1, value, color=variable, group=variable)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  my_theme +
+  labs(x = 'Layer', y = NULL, color=NULL)  +
+  scale_y_continuous(n.breaks=3) +
+  scale_x_continuous(breaks = c(1, 7)) +
+  #scale_color_viridis_c(option='magma', trans='log10', end=0.8, breaks=c(0.125, 2)) +
+  facet_wrap(~scaling, scales='free_y') +
+  colorspace::scale_color_discrete_qualitative(palette='Dark3')
+fig_c
+```
+
+```{r}
+df2 <- read_csv('data/processed/cifar/vit_acc.csv')
+fig_d <-
+  df2 %>%
+  filter((scaling==1.) | is.na(scaling)) %>%
+  mutate(
+    mode = factor(mode, c('multitask', 'finetuning', 'singletask'))
+  ) %>%
+  ggplot(aes(n_samples, 1-valid, color=mode)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x),
+               show.legend=FALSE) +
+  stat_summary(geom='line', size=0.25) +
+  scale_color_manual(
+    values = c(
+      'purple', 'darkgreen', 'blue'
+    ),
+    labels = c('MTL', 'PT+FT', 'STL')
+  ) +
+  my_theme +
+  scale_x_log10(breaks=c(20, 500)) +
+  scale_y_log10(breaks=c(0.05, 0.2)) +
+  labs(x = '# Samples', y = 'Accuracy', color=NULL) 
+fig_d
+```
+
+```{r}
+fig_e <-
+  df2 %>%
+  filter(mode == 'finetuning') %>%
+  ggplot(aes(n_samples, 1-valid, color=scaling, group=scaling)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  my_theme +
+  scale_x_log10(breaks=c(20, 500)) +
+  scale_y_log10(breaks=c(0.05, 0.2)) +
+  labs(x = '# Samples', y = 'Accuracy', color='Scaling')  +
+  scale_color_viridis_c(option='magma', trans='log10', end=0.8, breaks=c(0.125, 2))
+fig_e
+```
+
+```{r}
+fig_f <-
+  read_csv('data/processed/cifar/vit_ensd.csv') %>%
+  filter(n_samples == 1000, variable != 'Overlap') %>%
+  mutate(
+    variable = factor(variable, levels = c('PR Pre', 'PR Post', 'ENSD'))
+  ) %>%
+  filter(scaling %in% c(0.125, 1, 2)) %>%
+  mutate(scaling = paste('Scaling:', scaling)) %>%
+  ggplot(aes(layer+1, value, color=variable, group=variable)) +
+  stat_summary(geom='linerange', size=0.25,
+               fun.min=function(x) mean(x)-2*se(x), fun.max=function(x) mean(x)+2*se(x)) +
+  stat_summary(geom='line', size=0.25) +
+  my_theme +
+  labs(x = 'Layer', y = NULL, color=NULL)  +
+  scale_y_continuous(n.breaks=3) +
+  scale_x_continuous(breaks = c(1, 8)) +
+  #scale_color_viridis_c(option='magma', trans='log10', end=0.8, breaks=c(0.125, 2)) +
+  facet_wrap(~scaling, scales='free_y') +
+  colorspace::scale_color_discrete_qualitative(palette='Dark3')
+fig_f
+```
+
+```{r}
+fig <-
+  fig_a + fig_b + (fig_c) + fig_d + fig_e + (fig_f) +
+  plot_layout(nrow=2, widths=c(1,1,3)) +
+  plot_annotation(tag_levels = 'a')
+fig & theme(legend.key.size = unit(4, 'pt'))
+ggsave('figures/fig-dnns.pdf', width = width, height = 0.35*width, units = 'cm')
+```
+
