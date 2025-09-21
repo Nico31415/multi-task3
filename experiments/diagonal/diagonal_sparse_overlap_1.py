@@ -22,11 +22,12 @@ argparse_array = ArgparseArray(
     linear_readout=[False],
     n_train1=1024,
     # n_train2=[2**i for i in range(4, 10)],
-    n_train2=[64]
+    n_train2=[64],
+    w_scaling=[0.01, 1.0],
     aux_overlap_bool=['yes'],
     overlap=(lambda array_id, overlap_bool, active_dim_2, **kwargs: 0 if overlap_bool=='no' else active_dim_2),
     lr=.1,
-    save_path=name_instance('seed', 'n_train2', 'active_dim_2', 'load_model', 'linear_readout', 'one_task', 'overlap_bool',
+    save_path=name_instance('seed', 'n_train2', 'active_dim_2', 'load_model', 'linear_readout', 'one_task', 'overlap_bool', 'w_scaling',
                             base_folder='data/diagonal/sparse_overlap'),
     save_weights=True
 )
