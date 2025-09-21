@@ -6,11 +6,12 @@ sys.path.append('')
 from functions.array_training import ArgparseArray, name_instance
 
 argparse_array = ArgparseArray(
-    seed=list(range(6)),
+    seed=list(range(1)),
     inp_dim=[1000],
-    active_dim=[40,1000],
-    n_train=[2**i for i in range(5, 11)],
-    scaling=[1e-3, 1.],
+    active_dim=[40],
+    n_train=[1024],
+    # n_train=[2**i for i in range(5, 11)],
+    scaling=[1e-3],
     threshold=1e-10,
     epochs=int(1e6),
     lr = .5,

@@ -93,11 +93,11 @@ def train_two_tasks(model, train_data, val_data, test_every_n_epochs=50, epochs=
         loss = loss.item()
         if (i%test_every_n_epochs==0):
             with torch.no_grad():
+                val_mse_1 = F.mse_loss(model(val_x)[:,0], val_y1).item()
+                val_mse_2 = F.mse_loss(model(val_x)[:,1], val_y2).item()
+                print(f'Epoch {i}: Validation MSE Task 1: {val_mse_1:.6f}, Validation MSE Task 2: {val_mse_2:.6f}')
                 new_df = pd.DataFrame({
-                    'loss': [
-                        F.mse_loss(model(val_x)[:,0], val_y1).item(),
-                        F.mse_loss(model(val_x)[:,1], val_y2).item()
-                    ],
+                    'loss': [val_mse_1, val_mse_2],
                     'split': ['val_1', 'val_2']
                 })
                 new_df['epoch'] = i
@@ -109,11 +109,11 @@ def train_two_tasks(model, train_data, val_data, test_every_n_epochs=50, epochs=
             print(f'Decreasing learning rate to {lr}')
             return train_two_tasks(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, pretrained_beta=pretrained_beta)
     with torch.no_grad():
+        final_val_mse_1 = F.mse_loss(model(val_x)[:,0], val_y1).item()
+        final_val_mse_2 = F.mse_loss(model(val_x)[:,1], val_y2).item()
+        print(f'Final Validation MSE Task 1: {final_val_mse_1:.6f}, Final Validation MSE Task 2: {final_val_mse_2:.6f}')
         new_df = pd.DataFrame({
-            'loss': [
-                F.mse_loss(model(val_x)[:,0], val_y1).item(),
-                F.mse_loss(model(val_x)[:,1], val_y2).item()
-            ],
+            'loss': [final_val_mse_1, final_val_mse_2],
             'split': ['val_1', 'val_2']
         })
         new_df['epoch'] = i
@@ -158,10 +158,10 @@ def train_one_task(model, train_data, val_data, test_every_n_epochs=50, epochs=1
         loss = loss.item()
         if (i%test_every_n_epochs==0):
             with torch.no_grad():
+                val_mse = F.mse_loss(model(val_x), val_y).item()
+                print(f'Epoch {i}: Validation MSE: {val_mse:.6f}')
                 new_df = pd.DataFrame({
-                    'loss': [
-                        F.mse_loss(model(val_x), val_y).item()
-                    ],
+                    'loss': [val_mse],
                     'split': ['val']
                 })
                 new_df['epoch'] = i
@@ -173,10 +173,10 @@ def train_one_task(model, train_data, val_data, test_every_n_epochs=50, epochs=1
             print(f'Decreasing learning rate to {lr}')
             return train_one_task(or_model, train_data, val_data, test_every_n_epochs=test_every_n_epochs, epochs=epochs, lr=lr, momentum=momentum, lr_tuning=lr_tuning, test_at_end_only=test_at_end_only, threshold=threshold, beta_1=beta_1)
     with torch.no_grad():
+        final_val_mse = F.mse_loss(model(val_x), val_y).item()
+        print(f'Final Validation MSE: {final_val_mse:.6f}')
         new_df = pd.DataFrame({
-            'loss': [
-                F.mse_loss(model(val_x), val_y).item()
-            ],
+            'loss': [final_val_mse],
             'split': ['val']
         })
         new_df['epoch'] = i
