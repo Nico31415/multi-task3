@@ -235,6 +235,35 @@ def select_output(outp, task):
 def main(args):
     Path(os.path.dirname(args.save_path)).mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
+    # Print experimental setup
+    setup = {
+        'seed': args.seed,
+        'save_path': args.save_path,
+        'model_path': args.model_path,
+        'load_model': bool(args.load_model),
+        'model_scaling': args.model_scaling,
+        'n_train1': args.n_train1,
+        'n_train2': args.n_train2,
+        'active_dim_1': args.active_dim_1,
+        'active_dim_2': args.active_dim_2,
+        'inp_dim': args.inp_dim,
+        'threshold': args.threshold,
+        'no_tuning': bool(args.no_tuning),
+        'lr': args.lr,
+        'epochs': args.epochs,
+        'scaling': args.scaling,
+        'overlap': args.overlap,
+        'linear_readout': bool(args.linear_readout),
+        'one_task': bool(args.one_task),
+        'save_weights': bool(args.save_weights),
+        'w_scaling': args.w_scaling,
+        'init_method': getattr(args, 'init_method', None),
+        'lmda': getattr(args, 'lmda', None),
+        'c': getattr(args, 'c', None),
+    }
+    print('Experimental setup:')
+    for k, v in setup.items():
+        print(f'  {k}: {v}')
     param1, param2 = sample_two_teachers(args.inp_dim, args.active_dim_1, args.active_dim_2, overlap=args.overlap)
     x1 = circular_sample((args.n_train1, args.inp_dim))
     x2 = circular_sample((args.n_train2, args.inp_dim))
@@ -281,6 +310,74 @@ def main(args):
         print(os.path.join(args.save_path, 'weights_df.feather'))
         df_weights.to_feather(os.path.join(args.save_path, 'weights_df.feather')) 
 
+    # Append summary row with final metrics and experimental setup
+    with torch.no_grad():
+        if args.one_task:
+            final_train_mse = F.mse_loss(model(x2), y2).item()
+            final_val_mse = F.mse_loss(model(val_x), val_y2).item()
+            metrics = {
+                'final_train_mse': final_train_mse,
+                'final_val_mse': final_val_mse,
+                'final_train_mse_task1': np.nan,
+                'final_train_mse_task2': np.nan,
+                'final_val_mse_task1': np.nan,
+                'final_val_mse_task2': np.nan,
+            }
+        else:
+            pred_train = model(x)
+            final_train_mse_task1 = F.mse_loss(pred_train[task==0, 0], y[task==0]).item()
+            final_train_mse_task2 = F.mse_loss(pred_train[task==1, 1], y[task==1]).item()
+            final_val_mse_task1 = F.mse_loss(model(val_x)[:,0], val_y1).item()
+            final_val_mse_task2 = F.mse_loss(model(val_x)[:,1], val_y2).item()
+            metrics = {
+                'final_train_mse': np.nan,
+                'final_val_mse': np.nan,
+                'final_train_mse_task1': final_train_mse_task1,
+                'final_train_mse_task2': final_train_mse_task2,
+                'final_val_mse_task1': final_val_mse_task1,
+                'final_val_mse_task2': final_val_mse_task2,
+            }
+
+    # Collect experimental setup variables
+    exp_vars = {
+        'seed': args.seed,
+        'save_path': args.save_path,
+        'model_path': args.model_path,
+        'load_model': bool(args.load_model),
+        'model_scaling': args.model_scaling,
+        'n_train1': args.n_train1,
+        'n_train2': args.n_train2,
+        'active_dim_1': args.active_dim_1,
+        'active_dim_2': args.active_dim_2,
+        'inp_dim': args.inp_dim,
+        'threshold': args.threshold,
+        'no_tuning': bool(args.no_tuning),
+        'lr': args.lr,
+        'epochs': args.epochs,
+        'scaling': args.scaling,
+        'overlap': args.overlap,
+        'linear_readout': bool(args.linear_readout),
+        'one_task': bool(args.one_task),
+        'save_weights': bool(args.save_weights),
+        'w_scaling': args.w_scaling,
+        # Pretrain hyperparameters passed through for traceability
+        'init_method': getattr(args, 'init_method', None),
+        'lmda': getattr(args, 'lmda', None),
+        'c': getattr(args, 'c', None),
+    }
+    row = {**metrics, **exp_vars}
+    # Write to central CSV at the suite root (parent of the experiment folder)
+    results_path = os.path.join(os.path.dirname(os.path.dirname(args.save_path)), 'experiment_results.csv')
+    try:
+        if os.path.exists(results_path):
+            existing = pd.read_csv(results_path)
+            new_df = pd.concat([existing, pd.DataFrame([row])], ignore_index=True)
+        else:
+            new_df = pd.DataFrame([row])
+        new_df.to_csv(results_path, index=False)
+    except Exception as e:
+        print(f'Warning: failed to write experiment_results.csv due to: {e}')
+
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--seed', type=int, default=0)
@@ -303,6 +400,10 @@ def get_parser():
     parser.add_argument('--one_task', action='store_true')
     parser.add_argument('--save_weights', action='store_true')
     parser.add_argument('--w_scaling', type=float, default=1.)
+    # Accept but ignore these, so array drivers can pass pretrain hyperparams
+    parser.add_argument('--init_method', type=str, choices=['complex', 'simple'], default='complex')
+    parser.add_argument('--lmda', type=str, default='0.0000000000')
+    parser.add_argument('--c', type=str, default='0.0010000000')
     return parser
 
 if __name__ == '__main__':
